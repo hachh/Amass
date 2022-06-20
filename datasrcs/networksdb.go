@@ -58,8 +58,8 @@ func NewNetworksDB(sys systems.System) *NetworksDB {
 		hasAPIKey:  true,
 	}
 
-	go n.requests()
 	n.BaseService = *service.NewBaseService(n, "NetworksDB")
+	go n.requests()
 	return n
 }
 

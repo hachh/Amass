@@ -30,8 +30,8 @@ func NewCloudflare(sys systems.System) *Cloudflare {
 		sys:        sys,
 	}
 
-	go c.requests()
 	c.BaseService = *service.NewBaseService(c, "Cloudflare")
+	go c.requests()
 	return c
 }
 

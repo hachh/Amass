@@ -36,8 +36,8 @@ func NewDNSDB(sys systems.System) *DNSDB {
 		sys:        sys,
 	}
 
-	go d.requests()
 	d.BaseService = *service.NewBaseService(d, "DNSDB")
+	go d.requests()
 	return d
 }
 

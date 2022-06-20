@@ -32,8 +32,8 @@ func NewFOFA(sys systems.System) *FOFA {
 		sys:        sys,
 	}
 
-	go f.requests()
 	f.BaseService = *service.NewBaseService(f, "FOFA")
+	go f.requests()
 	return f
 }
 

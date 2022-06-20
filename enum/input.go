@@ -30,21 +30,23 @@ const (
 
 // enumSource handles the filtering and release of new Data in the enumeration.
 type enumSource struct {
-	enum        *Enumeration
-	queue       queue.Queue
-	dups        queue.Queue
-	sweeps      queue.Queue
-	filter      *bf.StableBloomFilter
-	sweepLock   sync.Mutex
-	sweepFilter *bf.StableBloomFilter
-	subre       *regexp.Regexp
-	done        chan struct{}
-	doneOnce    sync.Once
-	release     chan struct{}
-	inputsig    chan uint32
-	max         int
-	countLock   sync.Mutex
-	count       uint32
+	enum             *Enumeration
+	queue            queue.Queue
+	dups             queue.Queue
+	sweeps           queue.Queue
+	filter           *bf.StableBloomFilter
+	filterMutex      *sync.Mutex
+	sweepLock        sync.Mutex
+	sweepFilter      *bf.StableBloomFilter
+	sweepFilterMutex *sync.Mutex
+	subre            *regexp.Regexp
+	done             chan struct{}
+	doneOnce         sync.Once
+	release          chan struct{}
+	inputsig         chan uint32
+	max              int
+	countLock        sync.Mutex
+	count            uint32
 }
 
 // newEnumSource returns an initialized input source for the enumeration pipeline.
@@ -55,17 +57,19 @@ func newEnumSource(e *Enumeration) *enumSource {
 	}
 
 	r := &enumSource{
-		enum:        e,
-		queue:       queue.NewQueue(),
-		dups:        queue.NewQueue(),
-		sweeps:      queue.NewQueue(),
-		filter:      bf.NewDefaultStableBloomFilter(1000000, 0.01),
-		sweepFilter: bf.NewDefaultStableBloomFilter(1000000, 0.01),
-		subre:       dns.AnySubdomainRegex(),
-		done:        make(chan struct{}),
-		release:     make(chan struct{}, qps),
-		inputsig:    make(chan uint32, qps*2),
-		max:         qps,
+		enum:             e,
+		queue:            queue.NewQueue(),
+		dups:             queue.NewQueue(),
+		sweeps:           queue.NewQueue(),
+		filter:           bf.NewDefaultStableBloomFilter(1000000, 0.01),
+		filterMutex:      &sync.Mutex{},
+		sweepFilter:      bf.NewDefaultStableBloomFilter(1000000, 0.01),
+		sweepFilterMutex: &sync.Mutex{},
+		subre:            dns.AnySubdomainRegex(),
+		done:             make(chan struct{}),
+		release:          make(chan struct{}, qps),
+		inputsig:         make(chan uint32, qps*2),
+		max:              qps,
 	}
 	// Monitor the enumeration for completion or termination
 	go func() {
@@ -93,8 +97,14 @@ func (r *enumSource) Stop() {
 	r.queue.Process(func(e interface{}) {})
 	r.dups.Process(func(e interface{}) {})
 	r.sweeps.Process(func(e interface{}) {})
+
+	r.filterMutex.Lock()
 	r.filter.Reset()
+	r.filterMutex.Unlock()
+
+	r.sweepFilterMutex.Lock()
 	r.sweepFilter.Reset()
+	r.sweepFilterMutex.Unlock()
 }
 
 func (r *enumSource) markDone() {
@@ -158,6 +168,9 @@ func (r *enumSource) accept(s, tag, source string, name bool) bool {
 	trusted := requests.TrustedTag(tag)
 	// Do not submit names from untrusted sources, after already receiving the name
 	// from a trusted source
+	r.filterMutex.Lock()
+	defer r.filterMutex.Unlock()
+
 	if !trusted && r.filter.Test([]byte(s+strconv.FormatBool(true))) {
 		if name {
 			r.dups.Append(&requests.DNSRequest{
@@ -300,17 +313,15 @@ func (r *enumSource) monitorDataSrcOutput(srv service.Service) {
 }
 
 func (r *enumSource) requestSweeps() {
-	r.sweepLock.Lock()
-	defer r.sweepLock.Unlock()
-
 	for {
-		if unfilled := r.max - r.queue.Len(); unfilled <= 0 {
+		if unfilled := r.max - r.queue.Len(); unfilled <= 0 || r.queue.Len() == 0 {
 			break
 		}
 		if e, ok := r.sweeps.Next(); ok {
 			// Generate the additional addresses to sweep across
 			_ = r.sweepAddrs(r.enum.ctx, e.(*requests.AddrRequest))
 		}
+		time.Sleep(time.Second)
 	}
 }
 
@@ -329,6 +340,7 @@ func (r *enumSource) sweepAddrs(ctx context.Context, req *requests.AddrRequest) 
 		default:
 		}
 
+		r.sweepLock.Lock()
 		if a := ip.String(); !r.sweepFilter.TestAndAdd([]byte(a)) {
 			count++
 			r.queue.Append(&requests.AddrRequest{
@@ -338,6 +350,7 @@ func (r *enumSource) sweepAddrs(ctx context.Context, req *requests.AddrRequest) 
 				Source:  req.Source,
 			})
 		}
+		r.sweepLock.Unlock()
 	}
 	return count
 }

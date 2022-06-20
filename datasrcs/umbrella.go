@@ -38,8 +38,8 @@ func NewUmbrella(sys systems.System) *Umbrella {
 		sys:        sys,
 	}
 
-	go u.requests()
 	u.BaseService = *service.NewBaseService(u, "Umbrella")
+	go u.requests()
 	return u
 }
 

@@ -44,8 +44,8 @@ func NewRADb(sys systems.System) *RADb {
 		sys:        sys,
 	}
 
-	go r.requests()
 	r.BaseService = *service.NewBaseService(r, "RADb")
+	go r.requests()
 	return r
 }
 

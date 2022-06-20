@@ -38,8 +38,8 @@ func NewAlienVault(sys systems.System) *AlienVault {
 		sys:        sys,
 	}
 
-	go a.requests()
 	a.BaseService = *service.NewBaseService(a, "AlienVault")
+	go a.requests()
 	return a
 }
 

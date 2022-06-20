@@ -37,8 +37,8 @@ func NewTwitter(sys systems.System) *Twitter {
 		sys:        sys,
 	}
 
-	go t.requests()
 	t.BaseService = *service.NewBaseService(t, "Twitter")
+	go t.requests()
 	return t
 }
 
